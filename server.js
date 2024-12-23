@@ -1,11 +1,13 @@
+require("dotenv").config(); // 讀取 .env 檔案中的環境變數
 const express = require("express");
-const session = require('express-session');
+const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
 const cors = require("cors");
-const multer = require("multer"); // 引入 multer 用於處理文件上傳
+const multer = require("multer");
+
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // 使用環境變數中的端口，若無則使用 3000
 
 // 設定圖片儲存路徑為 public/picture/upload 資料夾
 const storage = multer.diskStorage({
@@ -21,13 +23,17 @@ const upload = multer({ storage: storage });
 
 // 暫存財務紀錄
 let records = [];
-const dataFilePath = path.join(__dirname, "data.json");
+// 根據生產環境或本地環境設定資料檔案的路徑
+const dataFilePath =
+  process.env.NODE_ENV === "production"
+    ? "/path/to/production/data.json"
+    : path.join(__dirname, "data.json");
 
 // 暫存日曆事件
 let events = [];
 const eventsFilePath = path.join(__dirname, "events.json");
 
-// 暫存session事件
+// 暫存 session 事件
 let xsessions = [];
 const xsessionsFilePath = path.join(__dirname, "xsessions.json");
 
@@ -53,24 +59,23 @@ function loadData() {
     console.error("事件檔案讀取錯誤，使用預設空資料。", err);
     events = [];
   }
-    // 載入session資料
-    try {
-      const xsessionsData = fs.readFileSync(xsessionsFilePath, "utf8");
-      if (xsessionsData) {
-        xsessions = JSON.parse(xsessionsData);
-      }
-    } catch (err) {
-      console.error("session檔案讀取錯誤，使用預設空資料。", err);
-      xsessions = [];
+
+  // 載入 session 資料
+  try {
+    const xsessionsData = fs.readFileSync(xsessionsFilePath, "utf8");
+    if (xsessionsData) {
+      xsessions = JSON.parse(xsessionsData);
     }
+  } catch (err) {
+    console.error("session檔案讀取錯誤，使用預設空資料。", err);
+    xsessions = [];
+  }
 }
 
 // 寫入資料
 function saveData() {
   try {
-    console.log("準備寫入資料到檔案...", records); // Debug: 檢查 records 內容
     fs.writeFileSync(dataFilePath, JSON.stringify(records, null, 2), "utf8");
-    console.log("資料已寫入檔案");
   } catch (err) {
     console.error("無法寫入資料檔案！", err);
   }
@@ -92,16 +97,17 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, "public")));
 
-
-// GET /api/xsessions - 取得所有sessions
-app.get("/api/xsessions", (req, res) => {
-  console.log("收到 GET 請求，返回所有session紀錄");
-  res.json(xsessions);
-});
-
+// 設定 session 相關選項，並使用環境變數中的 SECRET
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "default_session_secret", // 從環境變數中讀取 secret
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: process.env.NODE_ENV === "production" ? true : false }, // 若是生產環境則設為 true
+  })
+);
 
 // --- 財務管理 API ---
-
 // GET /api/records - 取得所有財務紀錄
 app.get("/api/records", (req, res) => {
   console.log("收到 GET 請求，返回所有財務紀錄");
@@ -153,7 +159,6 @@ app.delete("/api/records/:id", (req, res) => {
 });
 
 // --- 圖片管理 API ---
-
 // 上傳圖片的路由
 app.post("/api/upload", upload.single("image"), (req, res) => {
   if (!req.file) {
@@ -204,7 +209,6 @@ app.delete("/api/delete-image/:filename", (req, res) => {
 });
 
 // --- 日曆事件管理 API ---
-
 // GET /api/events - 取得所有事件
 app.get("/api/events", (req, res) => {
   res.json(events);
